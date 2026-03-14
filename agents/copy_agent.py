@@ -1,19 +1,12 @@
 import json
-import boto3
-import streamlit as st
 
-# Initialize Bedrock client
-bedrock = boto3.client(
-    "bedrock-runtime",
-    region_name=st.secrets["AWS_REGION"],
-    aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"]
-)
+from agents._json_utils import parse_json_response
+from services.bedrock import call_nova_text
 
 COPY_SYSTEM_PROMPT = """You are an elite advertising copywriter who writes for top brands.
 You will be given a Brand Brief (JSON). Use it to write ad copy for 5 platforms.
 
-You MUST respond with ONLY valid JSON — no markdown, no explanation, no extra text.
+You MUST respond with ONLY valid JSON - no markdown, no explanation, no extra text.
 
 Return this exact JSON structure:
 {
@@ -36,7 +29,7 @@ Return this exact JSON structure:
         "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6", "keyword7", "keyword8", "keyword9", "keyword10"]
     },
     "tiktok": {
-        "hook": "First 2 seconds — must stop the scroll (short, punchy, curiosity-driven)",
+        "hook": "First 2 seconds - must stop the scroll (short, punchy, curiosity-driven)",
         "scenes": [
             {"time": "0-2s", "action": "Hook text on screen, product in background"},
             {"time": "2-5s", "action": "Describe what happens visually"},
@@ -69,57 +62,17 @@ Respond with ONLY the JSON object. Nothing else."""
 
 def run_copy_agent(brand_brief):
     """
-    Takes a Brand Brief dictionary, sends to Nova Lite.
-    Returns ad copy for all 5 platforms as a dictionary.
+    Takes a Brand Brief dictionary and returns ad copy for all 5 platforms.
     """
-    request_body = {
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "text": f"Here is the Brand Brief:\n{json.dumps(brand_brief, indent=2)}\n\nWrite ad copy for all 5 platforms."
-                    }
-                ]
-            }
-        ],
-        "system": [
-            {
-                "text": COPY_SYSTEM_PROMPT
-            }
-        ],
-        "inferenceConfig": {
-            "maxTokens": 2048,
-            "temperature": 0.7
-        }
-    }
-
-    response = bedrock.invoke_model(
-        modelId=st.secrets["BEDROCK_MODEL_ID"],
-        body=json.dumps(request_body),
-        contentType="application/json",
-        accept="application/json"
+    raw_text = call_nova_text(
+        prompt=f"Here is the Brand Brief:\n{json.dumps(brand_brief, indent=2)}\n\nWrite ad copy for all 5 platforms.",
+        system_prompt=COPY_SYSTEM_PROMPT,
+        max_tokens=2048,
+        temperature=0.7,
     )
-
-    response_body = json.loads(response["body"].read())
-    raw_text = response_body["output"]["message"]["content"][0]["text"]
-
-    # Clean up response
-    raw_text = raw_text.strip()
-    if raw_text.startswith("```json"):
-        raw_text = raw_text[7:]
-    if raw_text.startswith("```"):
-        raw_text = raw_text[3:]
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3]
-    raw_text = raw_text.strip()
-
-    copy_output = json.loads(raw_text)
-
-    return copy_output
+    return parse_json_response(raw_text)
 
 
-# --- Test independently ---
 if __name__ == "__main__":
     from mock_data import MOCK_BRAND_BRIEF
 

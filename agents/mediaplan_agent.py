@@ -1,20 +1,13 @@
 import json
-import boto3
-import streamlit as st
 
-# Initialize Bedrock client
-bedrock = boto3.client(
-    "bedrock-runtime",
-    region_name=st.secrets["AWS_REGION"],
-    aws_access_key_id=st.secrets["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=st.secrets["AWS_SECRET_ACCESS_KEY"]
-)
+from agents._json_utils import parse_json_response
+from services.bedrock import call_nova_text
 
 MEDIAPLAN_SYSTEM_PROMPT = """You are an expert digital media planner and advertising strategist.
 You will be given a Brand Brief, ad copy for 5 platforms, and 3 customer personas.
 Use all of this to create a complete 7-day launch strategy.
 
-You MUST respond with ONLY valid JSON — no markdown, no explanation, no extra text.
+You MUST respond with ONLY valid JSON - no markdown, no explanation, no extra text.
 
 Return this exact JSON structure:
 {
@@ -35,10 +28,10 @@ Return this exact JSON structure:
     ],
     "ab_tests": [
         {
-            "test": "What is being tested (e.g., Instagram hook)",
+            "test": "What is being tested",
             "variant_a": "Version A text",
             "variant_b": "Version B text",
-            "metric": "What metric to track (CTR, Conversions, etc.)",
+            "metric": "What metric to track",
             "duration": "How long to run the test",
             "winner_rule": "How to determine the winner"
         }
@@ -54,75 +47,32 @@ Return this exact JSON structure:
 }
 
 Rules:
-- budget_split: Percentages must add up to 100. Allocate based on where the target personas spend time.
-- platform_strategy: One entry per platform (Instagram, TikTok, Google, Email). Include which creatives and which personas.
-- ab_tests: Create 2 meaningful A/B tests. Use actual copy from the ad copy provided.
-- seven_day_calendar: Exactly 7 days. Day 1 is soft launch, Day 7 is review/optimize. Ramp up spending mid-week.
-- daily_budget_recommendation: Suggest a realistic daily budget for a small business.
-- All recommendations should be practical and actionable for a small business owner.
+- budget_split percentages must add up to 100
+- platform_strategy should include Instagram, TikTok, Google, and Email
+- create exactly 2 meaningful A/B tests
+- create exactly 7 calendar entries
 
 Respond with ONLY the JSON object. Nothing else."""
 
 
 def run_mediaplan_agent(brand_brief, copy_output, personas):
     """
-    Takes Brand Brief, copy output, and personas.
-    Returns a complete media plan dictionary.
+    Takes Brand Brief, copy output, and personas and returns a media plan.
     """
     context = {
         "brand_brief": brand_brief,
         "copy": copy_output,
-        "personas": personas
+        "personas": personas,
     }
-
-    request_body = {
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "text": f"Here is everything you need:\n{json.dumps(context, indent=2)}\n\nCreate a complete 7-day media launch strategy."
-                    }
-                ]
-            }
-        ],
-        "system": [
-            {
-                "text": MEDIAPLAN_SYSTEM_PROMPT
-            }
-        ],
-        "inferenceConfig": {
-            "maxTokens": 2048,
-            "temperature": 0.7
-        }
-    }
-
-    response = bedrock.invoke_model(
-        modelId=st.secrets["BEDROCK_MODEL_ID"],
-        body=json.dumps(request_body),
-        contentType="application/json",
-        accept="application/json"
+    raw_text = call_nova_text(
+        prompt=f"Here is everything you need:\n{json.dumps(context, indent=2)}\n\nCreate a complete 7-day media launch strategy.",
+        system_prompt=MEDIAPLAN_SYSTEM_PROMPT,
+        max_tokens=2048,
+        temperature=0.7,
     )
-
-    response_body = json.loads(response["body"].read())
-    raw_text = response_body["output"]["message"]["content"][0]["text"]
-
-    # Clean up response
-    raw_text = raw_text.strip()
-    if raw_text.startswith("```json"):
-        raw_text = raw_text[7:]
-    if raw_text.startswith("```"):
-        raw_text = raw_text[3:]
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3]
-    raw_text = raw_text.strip()
-
-    media_plan = json.loads(raw_text)
-
-    return media_plan
+    return parse_json_response(raw_text)
 
 
-# --- Test independently ---
 if __name__ == "__main__":
     from mock_data import MOCK_BRAND_BRIEF, MOCK_COPY, MOCK_PERSONAS
 
