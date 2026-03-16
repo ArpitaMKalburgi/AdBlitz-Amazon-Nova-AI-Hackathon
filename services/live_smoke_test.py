@@ -3,7 +3,7 @@ import json
 from pprint import pprint
 
 from agents.orchestrator import generate_campaign
-from services.elevenlabs import generate_voiceover, list_voices
+from services.polly import generate_voiceover, list_voices
 from services.moviepy_processor import add_text_overlay, merge_audio_video
 from services._common import build_aws_client, get_setting
 from services.nova_canvas import generate_image
@@ -14,15 +14,15 @@ from services.s3 import read_file_bytes
 def _pick_voice_id() -> str:
     from services._common import get_setting
 
-    configured_voice_id = get_setting("ELEVENLABS_VOICE_ID")
+    configured_voice_id = get_setting("POLLY_VOICE_ID", default=get_setting("ELEVENLABS_VOICE_ID"))
     if configured_voice_id:
         return configured_voice_id
 
     voices = list_voices()
     if not voices:
-        raise RuntimeError("No ElevenLabs voices available for this API key.")
+        raise RuntimeError("No Amazon Polly voices available for this configuration.")
 
-    preferred_names = {"rachel", "bella", "adam", "antoni", "elli"}
+    preferred_names = {"joanna", "matthew", "danielle", "gregory", "ruth", "stephen"}
     for voice in voices:
         if voice.get("name", "").strip().lower() in preferred_names:
             return voice["voice_id"]
@@ -107,7 +107,7 @@ def run_live_smoke_test():
         print(f"   Campaign image generation/upload failed: {exc}")
         results["errors"]["campaign_image"] = str(exc)
 
-    print("5. Generating voiceover with ElevenLabs...")
+    print("5. Generating voiceover with Amazon Polly...")
     try:
         voice_id = _pick_voice_id()
         results["checks"]["voice_id"] = voice_id

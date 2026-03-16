@@ -12,7 +12,7 @@ from agents.audio_agent import run_audio_agent
 from agents.mediaplan_agent import run_mediaplan_agent
 from agents.refine_agent import run_refine_agent
 from services._common import build_aws_client, get_setting
-from services.elevenlabs import generate_voiceover, list_voices
+from services.polly import generate_voiceover, list_voices
 from services.moviepy_processor import add_text_overlay, merge_audio_video
 from services.nova_canvas import generate_image
 from services.nova_reel import generate_video
@@ -99,14 +99,14 @@ def _summarize_voices():
 
 
 def _pick_voice_id(audio_output, voices):
-    configured = get_setting("ELEVENLABS_VOICE_ID", default="")
+    configured = get_setting("POLLY_VOICE_ID", default=get_setting("ELEVENLABS_VOICE_ID", default=""))
     if audio_output.get("voice_id"):
         return audio_output["voice_id"]
     if configured:
         return configured
     if voices:
         return voices[0].get("voice_id")
-    raise RuntimeError("No ElevenLabs voice_id available.")
+    raise RuntimeError("No Amazon Polly voice_id available.")
 
 
 def _render_one_image(spec):

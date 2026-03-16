@@ -1,4 +1,5 @@
 import json
+
 from agents._json_utils import parse_json_response
 from services.bedrock import call_nova_text
 
@@ -10,7 +11,7 @@ You MUST respond with ONLY valid JSON - no markdown, no explanation, no extra te
 
 Return this exact JSON structure:
 {
-    "voice_id": "COPY THE EXACT voice_id STRING FROM THE AVAILABLE VOICES LIST - it looks like a random code e.g. EXAVITQu4vr4xnSDxMaL",
+    "voice_id": "COPY THE EXACT voice_id STRING FROM THE AVAILABLE VOICES LIST - for Amazon Polly this is usually a voice name like Joanna or Matthew",
     "voice_gender": "male or female",
     "voice_tone": "Describe the tone",
     "voice_pacing": "slow, medium, or fast",
@@ -21,7 +22,7 @@ Return this exact JSON structure:
 }
 
 CRITICAL RULES:
-- voice_id MUST be copied exactly from the available voices list — it is a random-looking code like "EXAVITQu4vr4xnSDxMaL", NOT a name like "Bella" or "Rachel"
+- voice_id MUST be copied exactly from the available voices list
 - If the available voices list is empty, set voice_id to ""
 - Keep script_text short enough to fit in 6 seconds when spoken naturally
 - Match voice characteristics to the brand_vibe and brand_voice
@@ -38,7 +39,7 @@ def run_audio_agent(brand_brief, voiceover_script, available_voices=None):
             f"Here is the Brand Brief:\n{json.dumps(brand_brief, indent=2)}"
             f"\n\nHere is the voiceover script:\n\"{voiceover_script}\""
             f"\n\nAvailable voices:\n{json.dumps(available_voices or [], indent=2)}"
-            "\n\nSelect the perfect voice for this brand. IMPORTANT: voice_id must be the exact code from the list, not the name."
+            "\n\nSelect the perfect voice for this brand. IMPORTANT: voice_id must exactly match one of the IDs in the available voices list."
         ),
         system_prompt=AUDIO_SYSTEM_PROMPT,
         max_tokens=768,
