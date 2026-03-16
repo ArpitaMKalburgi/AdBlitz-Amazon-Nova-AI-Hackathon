@@ -1,6 +1,7 @@
 import json
 import hashlib
 import concurrent.futures
+import threading
 import boto3
 import requests
 from agents.brand_agent import run_brand_agent
@@ -165,6 +166,35 @@ def _render_video_assets(image_bytes, video_plan, audio_plan):
     return rv, ra
 
 
+def _render_video_assets_with_timeout(image_bytes, video_plan, audio_plan, timeout=300):
+    """Run video generation in a thread with a timeout to prevent Streamlit Cloud drops."""
+    result = {"video": None, "audio": None, "error": None}
+
+    def _worker():
+        try:
+            v, a = _render_video_assets(image_bytes, video_plan, audio_plan)
+            result["video"] = v
+            result["audio"] = a
+        except Exception as e:
+            result["error"] = str(e)
+
+    thread = threading.Thread(target=_worker)
+    thread.start()
+
+    # Poll in small intervals to keep Streamlit connection alive
+    elapsed = 0
+    poll_interval = 5
+    while thread.is_alive() and elapsed < timeout:
+        thread.join(timeout=poll_interval)
+        elapsed += poll_interval
+
+    if thread.is_alive():
+        # Thread still running — video is generating but we timed out
+        result["error"] = "Video is still generating. It will be available in cache on next load."
+
+    return result
+
+
 # ── Main pipeline ─────────────────────────────────────────────
 
 def generate_campaign(image_bytes, status_callback=None):
@@ -208,25 +238,40 @@ def generate_campaign(image_bytes, status_callback=None):
         summarized = []
     audio_output = run_audio_agent(brand_brief, video_plan.get("voiceover_script", ""), summarized)
 
-    _emit(status_callback, "Generating video and voiceover...")
-    try:
-        video_output, audio_output = _render_video_assets(video_source, video_plan, audio_output)
-    except Exception as e:
-        video_output = dict(video_plan)
-        video_output["url"] = None
-        video_output["has_voiceover"] = False
-        video_output["error"] = str(e)
-        audio_output = dict(audio_output)
-        audio_output["url"] = None
-        audio_output["error"] = str(e)
+    _emit(status_callback, "Generating video and voiceover (this may take a few minutes)...")
 
-    campaign["video"] = video_output
-    campaign["audio"] = audio_output
+    # Save campaign WITHOUT video first so user gets results faster
+    campaign["video"] = dict(video_plan)
+    campaign["video"]["url"] = None
+    campaign["video"]["has_voiceover"] = False
+    campaign["video"]["status"] = "generating"
+    campaign["audio"] = dict(audio_output)
+    campaign["audio"]["url"] = None
+    campaign["media_plan"] = run_mediaplan_agent(brand_brief, copy_output, personas)
+
+    # Save partial campaign to cache (everything except video)
+    _save_to_cache(image_bytes, campaign)
+
+    # Now attempt video generation with timeout
+    video_result = _render_video_assets_with_timeout(video_source, video_plan, audio_output, timeout=600)
+
+    if video_result["video"] and not video_result["error"]:
+        campaign["video"] = video_result["video"]
+        campaign["audio"] = video_result["audio"]
+    else:
+        campaign["video"] = dict(video_plan)
+        campaign["video"]["url"] = None
+        campaign["video"]["has_voiceover"] = False
+        campaign["video"]["error"] = video_result.get("error", "Video generation timed out")
+        campaign["video"]["status"] = "failed"
+        campaign["audio"] = dict(audio_output)
+        campaign["audio"]["url"] = None
 
     _emit(status_callback, "Creating launch strategy...")
     campaign["media_plan"] = run_mediaplan_agent(brand_brief, copy_output, personas)
 
     _emit(status_callback, "Done.")
+    # Save final campaign with video (or without if failed)
     _save_to_cache(image_bytes, campaign)
 
     return campaign
@@ -294,13 +339,18 @@ def refine_campaign(feedback, current_campaign, image_bytes=None, status_callbac
             try:
                 lifestyle_bytes = _get_lifestyle_image_bytes(current_campaign.get("images", []))
                 video_source = lifestyle_bytes if lifestyle_bytes else image_bytes
-                v, a = _render_video_assets(
+                video_result = _render_video_assets_with_timeout(
                     video_source,
                     current_campaign.get("video", {}),
                     current_campaign.get("audio", {}),
+                    timeout=600,
                 )
-                current_campaign["video"] = v
-                current_campaign["audio"] = a
+                if video_result["video"] and not video_result["error"]:
+                    current_campaign["video"] = video_result["video"]
+                    current_campaign["audio"] = video_result["audio"]
+                else:
+                    current_campaign["video"]["error"] = video_result.get("error", "Video generation timed out")
+                    current_campaign["audio"]["error"] = video_result.get("error", "")
             except Exception as e:
                 current_campaign["video"]["error"] = str(e)
                 current_campaign["audio"]["error"] = str(e)
