@@ -159,9 +159,14 @@ def _render_video_assets(image_bytes, video_plan, audio_plan):
     except Exception:
         voices = []
 
-    voice_id = _pick_voice_id(ra, voices)
-    ra["voice_id"] = voice_id
-    ra["url"] = generate_voiceover(ra["script_text"], voice_id)
+    try:
+        voice_id = _pick_voice_id(ra, voices)
+        ra["voice_id"] = voice_id
+        ra["url"] = generate_voiceover(ra["script_text"], voice_id)
+    except Exception as exc:
+        # Voiceover is optional; keep going so Bedrock can still return a raw video.
+        ra["url"] = None
+        ra["error"] = str(exc)
 
     raw_url = generate_video(
         image_bytes, rv["video_prompt"],
@@ -172,12 +177,17 @@ def _render_video_assets(image_bytes, video_plan, audio_plan):
     overlay_url = raw_url
     rv["text_overlay_url"] = raw_url
 
-    try:
-        final_url = merge_audio_video(overlay_url, ra["url"])
-        rv["url"] = final_url
-        rv["has_voiceover"] = True
-    except Exception:
-        # If merge fails (e.g. on cloud), use raw video without voiceover
+    if ra.get("url"):
+        try:
+            final_url = merge_audio_video(overlay_url, ra["url"])
+            rv["url"] = final_url
+            rv["has_voiceover"] = True
+        except Exception as exc:
+            # If merge fails (e.g. on cloud), use raw video without voiceover.
+            ra["error"] = str(exc)
+            rv["url"] = raw_url
+            rv["has_voiceover"] = False
+    else:
         rv["url"] = raw_url
         rv["has_voiceover"] = False
 
