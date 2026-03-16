@@ -176,6 +176,9 @@ def _render_video_assets_with_timeout(image_bytes, video_plan, audio_plan, timeo
             result["video"] = v
             result["audio"] = a
         except Exception as e:
+            print(f"VIDEO ERROR: {e}")
+            import traceback
+            traceback.print_exc()
             result["error"] = str(e)
 
     thread = threading.Thread(target=_worker)
