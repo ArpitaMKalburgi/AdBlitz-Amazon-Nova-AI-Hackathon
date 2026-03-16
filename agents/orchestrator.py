@@ -159,14 +159,19 @@ def _render_video_assets(image_bytes, video_plan, audio_plan):
     overlay_url = raw_url
     rv["text_overlay_url"] = raw_url
 
-    final_url = merge_audio_video(overlay_url, ra["url"])
-    rv["url"] = final_url
-    rv["has_voiceover"] = True
+    try:
+        final_url = merge_audio_video(overlay_url, ra["url"])
+        rv["url"] = final_url
+        rv["has_voiceover"] = True
+    except Exception:
+        # If merge fails (e.g. on cloud), use raw video without voiceover
+        rv["url"] = raw_url
+        rv["has_voiceover"] = False
 
     return rv, ra
 
 
-def _render_video_assets_with_timeout(image_bytes, video_plan, audio_plan, timeout=300):
+def _render_video_assets_with_timeout(image_bytes, video_plan, audio_plan, timeout=600):
     """Run video generation in a thread with a timeout to prevent Streamlit Cloud drops."""
     result = {"video": None, "audio": None, "error": None}
 
@@ -255,7 +260,7 @@ def generate_campaign(image_bytes, status_callback=None):
     # Save partial campaign to cache (everything except video)
     _save_to_cache(image_bytes, campaign)
 
-    # Now attempt video generation with timeout
+    # Now attempt video generation with timeout (10 min)
     video_result = _render_video_assets_with_timeout(video_source, video_plan, audio_output, timeout=600)
 
     if video_result["video"] and not video_result["error"]:
