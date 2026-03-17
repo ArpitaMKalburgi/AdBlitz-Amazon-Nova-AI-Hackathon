@@ -1,4 +1,4 @@
-# AdBlitz - The Ad team that never sleeps
+# AdBlitz -  AI That Markets For You
 
 AdBlitz is a Streamlit app that turns a single product image into a launch-ready marketing campaign. It analyzes the uploaded image, generates brand positioning, writes cross-platform copy, creates ad creatives, produces a short video ad, builds a voiceover, and assembles a media plan.
 
